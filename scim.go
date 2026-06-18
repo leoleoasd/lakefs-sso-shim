@@ -82,17 +82,35 @@ func userResource(username string) map[string]interface{} {
 }
 
 func groupResource(name string, members []string) map[string]interface{} {
+	return groupResourceFull(name, name, members)
+}
+
+// groupResourceFull lets the SCIM id (the lakeFS group name) differ from the
+// displayName (the IdP group name) — used when GROUP_MAP renames groups.
+func groupResourceFull(id, displayName string, members []string) map[string]interface{} {
 	ms := []map[string]interface{}{}
 	for _, m := range members {
 		ms = append(ms, map[string]interface{}{"value": m, "display": m})
 	}
 	return map[string]interface{}{
 		"schemas":     []string{scimGroupSchema},
-		"id":          name,
-		"displayName": name,
+		"id":          id,
+		"displayName": displayName,
 		"members":     ms,
-		"meta":        map[string]interface{}{"resourceType": "Group", "location": "/scim/v2/Groups/" + name},
+		"meta":        map[string]interface{}{"resourceType": "Group", "location": "/scim/v2/Groups/" + id},
 	}
+}
+
+const scimUnmappedPrefix = "unmapped::"
+
+// scimMapGroup translates an IdP group name to its lakeFS group name.
+// honored=false => this IdP group is not in GROUP_MAP, so it grants nothing.
+func scimMapGroup(idpName string) (string, bool) {
+	if len(groupMap) == 0 {
+		return idpName, true
+	}
+	lk, ok := groupMap[idpName]
+	return lk, ok
 }
 
 func scimList(w http.ResponseWriter, resources []map[string]interface{}, total int) {
@@ -193,10 +211,12 @@ func scimGroups(w http.ResponseWriter, r *http.Request) {
 		attr, val := parseFilter(r.URL.Query().Get("filter"))
 		groups, _ := aclListGroups()
 		if attr == "displayname" {
-			if contains(groups, val) {
+			// val is the IdP group name; translate to the lakeFS group name
+			lk, ok := scimMapGroup(val)
+			if ok && contains(groups, lk) {
 				scimJSON(w, http.StatusOK, map[string]interface{}{
 					"schemas": []string{scimListSchema}, "totalResults": 1, "startIndex": 1, "itemsPerPage": 1,
-					"Resources": []map[string]interface{}{groupResource(val, aclGroupMembers(val))},
+					"Resources": []map[string]interface{}{groupResourceFull(lk, val, aclGroupMembers(lk))},
 				})
 			} else {
 				scimList(w, nil, 0)
@@ -220,15 +240,22 @@ func scimGroups(w http.ResponseWriter, r *http.Request) {
 			scimError(w, http.StatusBadRequest, "displayName required")
 			return
 		}
-		_, err := aclReq("POST", "/groups", mustJSON(map[string]string{"id": body.DisplayName}), 201, 409)
+		lk, ok := scimMapGroup(body.DisplayName)
+		if !ok {
+			// IdP group not in GROUP_MAP: accept the call but make NO lakeFS change
+			log.Printf("SCIM: ignoring unmapped group %q", body.DisplayName)
+			scimJSON(w, http.StatusCreated, groupResourceFull(scimUnmappedPrefix+body.DisplayName, body.DisplayName, nil))
+			return
+		}
+		_, err := aclReq("POST", "/groups", mustJSON(map[string]string{"id": lk}), 201, 409)
 		if err != nil {
 			scimError(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		for _, m := range body.Members {
-			_, _ = aclReq("PUT", "/groups/"+url.PathEscape(body.DisplayName)+"/members/"+url.PathEscape(m.Value), nil, 201, 409)
+			_, _ = aclReq("PUT", "/groups/"+url.PathEscape(lk)+"/members/"+url.PathEscape(m.Value), nil, 201, 409)
 		}
-		scimJSON(w, http.StatusCreated, groupResource(body.DisplayName, nil))
+		scimJSON(w, http.StatusCreated, groupResourceFull(lk, body.DisplayName, nil))
 	default:
 		scimError(w, http.StatusMethodNotAllowed, r.Method)
 	}
@@ -237,6 +264,16 @@ func scimGroups(w http.ResponseWriter, r *http.Request) {
 func scimGroupByID(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/scim/v2/Groups/")
 	id, _ = url.PathUnescape(id)
+	// unmapped IdP group (GROUP_MAP active, not listed): accept ops, change nothing
+	if strings.HasPrefix(id, scimUnmappedPrefix) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			scimJSON(w, http.StatusOK, groupResourceFull(id, strings.TrimPrefix(id, scimUnmappedPrefix), nil))
+		}
+		return
+	}
+	// here, id is the lakeFS group name (mapped or same-name)
 	switch r.Method {
 	case http.MethodGet:
 		if contains(mustGroups(), id) {

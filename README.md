@@ -35,9 +35,19 @@ Requires a lakeFS auth backend that supports user/group management via the auth 
 | `LISTEN_ADDR` | | `:8088` | shim listen address |
 | `OIDC_GROUPS_CLAIM` | | `groups` | token claim holding group names |
 | `OIDC_USERNAME_CLAIM` | | `preferred_username` | token claim for the lakeFS username (falls back to `sub`) |
-| `LAKEFS_DEFAULT_GROUP` | | `Readers` | group assigned when no token group matches a lakeFS group |
+| `LAKEFS_DEFAULT_GROUP` | | `Readers` | group assigned when no token group maps to a lakeFS group (set empty to give unmatched users no access) |
+| `GROUP_MAP` | | | explicit `idpGroup:lakefsGroup` pairs, comma-separated — IdP and lakeFS names may differ; **only listed IdP groups grant access** |
 
-Group mapping is **by name**: an IdP group is mapped to the lakeFS group with the same name, if it exists.
+**Group mapping.** By default an IdP group maps to the lakeFS group with the **same name**.
+Set `GROUP_MAP` to use an explicit table instead, e.g.
+
+```
+GROUP_MAP=Lakefs-user:Lakefs-user,company-data-admins:Lakefs-admin,proj-x:repo-x-manager
+```
+
+With `GROUP_MAP` set, the two sides' names can differ, and any IdP group **not** in the
+table grants nothing (combine with `LAKEFS_DEFAULT_GROUP=` for a strict "no access unless
+mapped" policy). The mapping applies to both OIDC login and SCIM.
 
 To define what each group can do (per-repo / fine-grained access), see
 [`examples/acl-rules.md`](examples/acl-rules.md) — full action catalog, ARN formats, and recipes.

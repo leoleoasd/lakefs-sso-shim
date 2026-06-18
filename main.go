@@ -33,7 +33,12 @@ var (
 	redirectURL  = os.Getenv("OIDC_REDIRECT_URL")                    // http://10.0.1.2:8088/oidc/callback
 	groupsClaim  = env("OIDC_GROUPS_CLAIM", "groups")
 	userClaim    = env("OIDC_USERNAME_CLAIM", "preferred_username")
-	defaultGroup = env("LAKEFS_DEFAULT_GROUP", "Readers")            // fallback group if no Authentik group matches a lakeFS group
+	defaultGroup = env("LAKEFS_DEFAULT_GROUP", "Readers")            // fallback group if no IdP group maps to a lakeFS group
+	// GROUP_MAP: explicit "idpGroup:lakefsGroup" pairs, comma-separated, e.g.
+	//   GROUP_MAP=Lakefs-user:Lakefs-user,lakefs-admins:Lakefs-admin
+	// When set, ONLY listed IdP groups are honored (names may differ on each side);
+	// any IdP group not in the map grants nothing. When empty, falls back to same-name matching.
+	groupMap = parseGroupMap(os.Getenv("GROUP_MAP"))
 )
 
 func env(k, d string) string {
@@ -41,6 +46,37 @@ func env(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func parseGroupMap(s string) map[string]string {
+	m := map[string]string{}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		if i := strings.LastIndex(pair, ":"); i > 0 {
+			m[strings.TrimSpace(pair[:i])] = strings.TrimSpace(pair[i+1:])
+		}
+	}
+	return m
+}
+
+// mapAuthGroups translates IdP group names to lakeFS group names.
+// With GROUP_MAP set: only mapped groups pass through (renamed); others dropped.
+// Without it: identity (same-name) mapping.
+func mapAuthGroups(authGroups []string) []string {
+	out := []string{}
+	for _, g := range authGroups {
+		if len(groupMap) > 0 {
+			if lk, ok := groupMap[g]; ok {
+				out = append(out, lk)
+			}
+		} else {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 var (
@@ -210,7 +246,7 @@ func provision(username string, authGroups []string) error {
 		return err
 	}
 	target := map[string]bool{}
-	for _, g := range authGroups {
+	for _, g := range mapAuthGroups(authGroups) {
 		if existing[g] {
 			target[g] = true
 		}
