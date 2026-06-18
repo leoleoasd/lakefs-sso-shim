@@ -75,6 +75,7 @@ services:
       OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
       OIDC_USERNAME_CLAIM: ${OIDC_USERNAME_CLAIM:-preferred_username}
       LAKEFS_DEFAULT_GROUP: ${LAKEFS_DEFAULT_GROUP:-Readers}
+      SCIM_TOKEN: ${SCIM_TOKEN:-}   # set to enable SCIM at /scim/v2 (IdP-pushed deprovisioning)
 
 volumes:
   acl-metadata:

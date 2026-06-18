@@ -78,6 +78,10 @@ func main() {
 	mux.HandleFunc("/oidc/callback", handleCallback)
 	mux.HandleFunc("/_shim/logout", handleLogout)
 	mux.HandleFunc("/_shim/health", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
+	// optional: SCIM 2.0 server for IdP-pushed lifecycle (real-time deprovisioning)
+	if scimEnabled() {
+		registerSCIM(mux)
+	}
 	// everything else proxied to lakeFS
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// seamless UX: if hitting lakeFS UI login page without a session, send to SSO

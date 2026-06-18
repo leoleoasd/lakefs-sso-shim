@@ -61,6 +61,27 @@ Point users at the shim (`:8088`); send them to `/_shim/login` to start SSO. `/_
 - `fs:ListRepositories` is global in lakeFS, so scoped users can still *see* other repo names (not their contents).
 - The shim holds the lakeFS shared secret (it can mint a token for any user). Treat it as a trusted component.
 
+## SCIM provisioning / deprovisioning (optional)
+
+Set `SCIM_TOKEN` to enable a SCIM 2.0 endpoint at `/scim/v2`. Point your IdP's SCIM
+provider at `https://<shim-host>/scim/v2` with `Authorization: Bearer <SCIM_TOKEN>`.
+
+The IdP then pushes user/group lifecycle in real time onto the lakeFS ACL server:
+
+| IdP action | effect in lakeFS |
+|------------|------------------|
+| create user / add to group | user created, added to same-named lakeFS group |
+| remove from group | membership removed |
+| **delete or deactivate user** | **lakeFS user deleted → all access & keys revoked** |
+
+This is the proper fix for deprovisioning: it's push-based and real-time, so it also
+covers users who never log in again (unlike login-time group sync). User id == `userName`,
+group id == `displayName`.
+
+| Var | Description |
+|-----|-------------|
+| `SCIM_TOKEN` | bearer token the IdP must present; enables `/scim/v2` when set |
+
 ## License
 
 MIT
