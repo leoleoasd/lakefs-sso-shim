@@ -39,6 +39,9 @@ Requires a lakeFS auth backend that supports user/group management via the auth 
 
 Group mapping is **by name**: an IdP group is mapped to the lakeFS group with the same name, if it exists.
 
+To define what each group can do (per-repo / fine-grained access), see
+[`examples/acl-rules.md`](examples/acl-rules.md) — full action catalog, ARN formats, and recipes.
+
 ## Quick start
 
 A complete, self-contained stack (lakeFS + reference ACL server + this shim) is in

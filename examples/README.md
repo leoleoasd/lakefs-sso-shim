@@ -31,6 +31,8 @@ The last call returns an `access_key_id` / `secret_access_key` — use them for 
 
 ## Per-repo groups (optional)
 
+Full reference (all actions, ARN formats, recipes): [acl-rules.md](acl-rules.md).
+
 The 4 default groups apply to **all** repos. To scope a group to one repo, create a custom policy on the ACL server and attach it:
 
 ```bash
