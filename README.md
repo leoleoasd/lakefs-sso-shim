@@ -39,7 +39,24 @@ Requires a lakeFS auth backend that supports user/group management via the auth 
 
 Group mapping is **by name**: an IdP group is mapped to the lakeFS group with the same name, if it exists.
 
-## Run
+## Quick start
+
+A complete, self-contained stack (lakeFS + reference ACL server + this shim) is in
+[`examples/docker-compose.yml`](examples/docker-compose.yml). It's the fastest way to
+see the whole thing working:
+
+```bash
+cd examples
+cp .env.example .env        # set SHARED_SECRET + your OIDC_* values
+docker compose up -d --build
+```
+
+See [`examples/README.md`](examples/README.md) for the one-time admin bootstrap and
+how to create per-repo groups.
+
+## Run (shim only)
+
+If you already run lakeFS + an ACL server, run just the shim:
 
 ```bash
 docker run -d --name lakefs-sso-shim -p 8088:8088 \
@@ -49,7 +66,7 @@ docker run -d --name lakefs-sso-shim -p 8088:8088 \
   -e OIDC_REDIRECT_URL=https://lakefs.example.com/oidc/callback \
   -e LAKEFS_UPSTREAM=http://lakefs:8000 \
   -e ACL_BASE=http://lakefs-aclserver:8001/api/v1/auth \
-  ghcr.io/OWNER/lakefs-sso-shim:latest
+  ghcr.io/leoleoasd/lakefs-sso-shim:latest
 ```
 
 Point users at the shim (`:8088`); send them to `/_shim/login` to start SSO. `/_shim/logout` clears the session.
