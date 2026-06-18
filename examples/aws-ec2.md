@@ -161,6 +161,19 @@ Open the UI at `http://EC2_PUBLIC_IP:8000` and log in with the admin keys.
 
 ---
 
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Repo create / object write → **403 AccessDenied** | IAM policy has the wrong bucket name, or the role isn't attached to this EC2 | Check the policy's `Resource` ARNs (bucket **and** `bucket/*`); confirm `aws sts get-caller-identity` on the box shows the `lakefs-ec2` role |
+| lakeFS logs show **"no EC2 IMDS role"** / "failed to refresh cached credentials" / NoCredentialProviders | Instance profile not attached, **or IMDS hop limit = 1** so the container can't reach IMDSv2 | Attach the profile (step 3); set `--http-put-response-hop-limit 2` (step 3 gotcha box); or run lakeFS with `network_mode: host` |
+| Repo create → **400** with a region / `BucketRegionError` | `AWS_REGION` in `.env` ≠ the bucket's actual region | Set `AWS_REGION` to the bucket region (`aws s3api get-bucket-location --bucket YOUR_BUCKET`) |
+| S3 errors mention **InvalidAccessKeyId / SignatureDoesNotMatch** | Stale static keys leaked in via env/`~/.aws` are overriding the role | Remove any `LAKEFS_BLOCKSTORE_S3_CREDENTIALS_*` and any `AWS_ACCESS_KEY_ID`/profile on the box — rely on the instance role only |
+| `setup_lakefs` → **"lakeFS already initialized"** | It was already set up on this metadata volume | Reuse the existing admin keys, or wipe to start over: `docker compose -f docker-compose.aws.yml down -v` (deletes the `lakefs-metadata` volume!) |
+| `create-bucket` → **BucketAlreadyExists/OwnedByYou** | Bucket name is global; taken | Pick a unique name |
+| Repo create → **"storage namespace ... already in use"** | Another repo already points at that `s3://bucket/prefix` | Use a fresh prefix per repo (`s3://bucket/<repo>`) |
+| Can't open the UI at `:8000` | Security group doesn't allow your IP, or it's only reachable on the tailnet/VPC | Open 8000 from your IP (or reach it via Tailscale / the reverse proxy) |
+
 ## Production notes
 
 - **TLS / domain**: put lakeFS behind a reverse proxy (ALB + ACM cert, or nginx/Caddy/Traefik)
