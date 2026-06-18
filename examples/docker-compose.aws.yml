@@ -1,0 +1,44 @@
+# lakeFS on AWS EC2, backed by real S3, authenticating to S3 via the EC2 instance
+# profile (IAM role) — NO static AWS keys.
+#
+# Run this on an EC2 instance that is:
+#   - in the SAME AWS account as the S3 bucket
+#   - in the SAME region as the bucket
+#   - has an IAM role (instance profile) attached granting access to the bucket
+#     (see aws-ec2.md for the exact IAM policy)
+#
+# Usage:
+#   cp .env.aws.example .env     # set AWS_REGION + LAKEFS_ENCRYPT_SECRET
+#   docker compose -f docker-compose.aws.yml up -d
+#
+# This is the minimal core: lakeFS + S3, single-admin (basic auth). To add SSO,
+# multi-user groups and SCIM, layer on the full stack in docker-compose.yml.
+
+services:
+  lakefs:
+    image: treeverse/lakefs:latest
+    command: run
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # --- metadata store: embedded local KV on a Docker volume ---
+      # (fine for a single instance; back up the volume. For HA use DynamoDB — see aws-ec2.md)
+      LAKEFS_DATABASE_TYPE: local
+      LAKEFS_DATABASE_LOCAL_PATH: /lakefs/metadata
+
+      # --- blockstore: real AWS S3 ---
+      LAKEFS_BLOCKSTORE_TYPE: s3
+      LAKEFS_BLOCKSTORE_S3_REGION: ${AWS_REGION:?set AWS_REGION in .env}
+      # IMPORTANT: do NOT set S3 credentials here. With no credentials block, lakeFS uses
+      # the AWS SDK default chain and picks up the EC2 instance profile (IAM role) from IMDS.
+      # For real AWS S3 leave force_path_style unset (virtual-hosted style is correct).
+
+      # --- encryption secret (random, keep stable & secret): openssl rand -hex 24 ---
+      LAKEFS_AUTH_ENCRYPT_SECRET_KEY: ${LAKEFS_ENCRYPT_SECRET:?set LAKEFS_ENCRYPT_SECRET in .env}
+      LAKEFS_LOGGING_LEVEL: INFO
+    volumes:
+      - lakefs-metadata:/lakefs/metadata
+
+volumes:
+  lakefs-metadata:

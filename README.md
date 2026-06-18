@@ -54,6 +54,11 @@ docker compose up -d --build
 See [`examples/README.md`](examples/README.md) for the one-time admin bootstrap and
 how to create per-repo groups.
 
+**Deploying on AWS EC2 with real S3** (IAM role, no static keys): follow
+[`examples/aws-ec2.md`](examples/aws-ec2.md) — a complete copy-paste walkthrough
+(create bucket → IAM role → launch EC2 → run [`docker-compose.aws.yml`](examples/docker-compose.aws.yml)
+→ bootstrap → verify). Start there for the minimal lakeFS+S3 core, then layer on SSO.
+
 ## Run (shim only)
 
 If you already run lakeFS + an ACL server, run just the shim:
