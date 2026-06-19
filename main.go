@@ -120,18 +120,40 @@ func main() {
 	}
 	// everything else proxied to lakeFS
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// seamless UX: if hitting lakeFS UI login page without a session, send to SSO
-		if r.URL.Path == "/auth/login" {
-			if _, err := r.Cookie("internal_auth_session"); err != nil {
-				http.Redirect(w, r, "/_shim/login", http.StatusFound)
-				return
-			}
+		// seamless UX: a browser navigation with no session -> straight to SSO.
+		// lakeFS is a SPA (it client-side-routes to /auth/login, which never hits the
+		// server), so we key off "is this a top-level HTML GET without our cookie?".
+		// XHR/fetch (Accept */*), static assets, API and S3-gateway/access-key calls
+		// don't send Accept: text/html, so they pass through untouched (and get 401 if
+		// unauthorized, rather than a redirect).
+		if browserNavWithoutSession(r) {
+			http.Redirect(w, r, "/_shim/login", http.StatusFound)
+			return
 		}
 		proxy.ServeHTTP(w, r)
 	})
 
 	log.Printf("lakefs-sso-shim listening on %s -> %s", listenAddr, upstream)
 	log.Fatal(http.ListenAndServe(listenAddr, mux))
+}
+
+// browserNavWithoutSession reports whether this is an unauthenticated top-level
+// browser navigation that should be bounced to SSO (vs an asset/XHR/API/S3 call).
+func browserNavWithoutSession(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if _, err := r.Cookie("internal_auth_session"); err == nil {
+		return false // already has a session cookie
+	}
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		return false // assets send text/css|image/*..., fetch/XHR send */*, S3/CLI send */* — not a page nav
+	}
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/_shim") || strings.HasPrefix(p, "/oidc") || strings.HasPrefix(p, "/scim") {
+		return false
+	}
+	return true
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
