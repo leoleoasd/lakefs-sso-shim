@@ -146,6 +146,9 @@ func browserNavWithoutSession(r *http.Request) bool {
 	if _, err := r.Cookie("internal_auth_session"); err == nil {
 		return false // already has a session cookie
 	}
+	if r.Header.Get("Authorization") != "" {
+		return false // an authenticated client (basic auth / bearer) — let it proxy through
+	}
 	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
 		return false // assets send text/css|image/*..., fetch/XHR send */*, S3/CLI send */* — not a page nav
 	}
