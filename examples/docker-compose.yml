@@ -13,9 +13,11 @@
 
 services:
   aclserver:
-    build:
-      context: .
-      dockerfile: aclserver.Dockerfile
+    image: ghcr.io/leoleoasd/lakefs-aclserver:latest   # multi-arch (amd64 + arm64)
+    # to build from source instead of pulling, comment the image line and use:
+    # build:
+    #   context: .
+    #   dockerfile: aclserver.Dockerfile
     restart: unless-stopped
     environment:
       ACLSERVER_LISTEN_ADDRESS: 0.0.0.0:8001
