@@ -270,6 +270,7 @@ func provision(username string, authGroups []string) error {
 	if err != nil {
 		return err
 	}
+	// target = exactly the lakeFS groups this login should grant
 	target := map[string]bool{}
 	for _, g := range mapAuthGroups(authGroups) {
 		if existing[g] {
@@ -279,14 +280,77 @@ func provision(username string, authGroups []string) error {
 	if len(target) == 0 && defaultGroup != "" && existing[defaultGroup] {
 		target[defaultGroup] = true
 	}
-	// add memberships (idempotent; ignore 201/409)
-	for g := range target {
-		if _, err := aclReq("PUT", "/groups/"+url.PathEscape(g)+"/members/"+url.PathEscape(username), nil, 201, 409); err != nil {
-			log.Printf("warn: add %s to %s: %v", username, g, err)
+
+	// "managed" = the groups the shim is allowed to reconcile (add AND remove).
+	// With GROUP_MAP: only the map's target groups (+ default). Without it (same-name
+	// mode): any existing group is a potential target, so manage all. This keeps full
+	// sync from ever stripping a group the shim would never assign.
+	managed := map[string]bool{}
+	if len(groupMap) > 0 {
+		for _, lk := range groupMap {
+			if existing[lk] {
+				managed[lk] = true
+			}
+		}
+	} else {
+		for g := range existing {
+			managed[g] = true
 		}
 	}
-	log.Printf("provisioned user=%s authGroups=%v -> lakefsGroups=%v", username, authGroups, keys(target))
+	if defaultGroup != "" && existing[defaultGroup] {
+		managed[defaultGroup] = true
+	}
+
+	current, err := aclUserGroups(username)
+	if err != nil {
+		return err
+	}
+	curSet := map[string]bool{}
+	for _, g := range current {
+		curSet[g] = true
+	}
+
+	// add: in target, not current
+	for g := range target {
+		if !curSet[g] {
+			if _, err := aclReq("PUT", "/groups/"+url.PathEscape(g)+"/members/"+url.PathEscape(username), nil, 201, 409); err != nil {
+				log.Printf("warn: add %s to %s: %v", username, g, err)
+			}
+		}
+	}
+	// remove: currently in a managed group that's no longer a target
+	for _, g := range current {
+		if managed[g] && !target[g] {
+			if _, err := aclReq("DELETE", "/groups/"+url.PathEscape(g)+"/members/"+url.PathEscape(username), nil, 204, 404); err != nil {
+				log.Printf("warn: remove %s from %s: %v", username, g, err)
+			} else {
+				log.Printf("sync: removed %s from %s (no longer granted)", username, g)
+			}
+		}
+	}
+	log.Printf("provisioned user=%s authGroups=%v -> lakefsGroups=%v (was %v)", username, authGroups, keys(target), current)
 	return nil
+}
+
+// aclUserGroups returns the lakeFS group names a user currently belongs to.
+func aclUserGroups(username string) ([]string, error) {
+	b, err := aclReq("GET", "/users/"+url.PathEscape(username)+"/groups?prefix=&after=&amount=1000", nil, 200)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	res := []string{}
+	for _, g := range out.Results {
+		res = append(res, g.Name)
+	}
+	return res, nil
 }
 
 func listLakeFSGroups() (map[string]bool, error) {

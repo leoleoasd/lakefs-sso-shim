@@ -92,7 +92,11 @@ Point users at the shim (`:8088`); send them to `/_shim/login` to start SSO. `/_
 ## Caveats
 
 - **UI login only.** OIDC covers the browser; programmatic/CLI access still uses lakeFS access keys.
-- **Group sync is additive** in this version — it adds memberships but does not remove stale ones. Removing a user from an IdP group won't revoke the matching lakeFS group until that's reconciled manually.
+- **Group sync is authoritative on login** — each login reconciles the user's lakeFS
+  groups to exactly what the token grants (adds missing, removes stale). It only ever
+  touches groups the shim manages (the `GROUP_MAP` targets + default group; or all groups
+  in same-name mode), so manually-assigned unrelated groups are left alone. SCIM applies
+  the same add/remove in real time (and handles users who never log in again).
 - `fs:ListRepositories` is global in lakeFS, so scoped users can still *see* other repo names (not their contents).
 - The shim holds the lakeFS shared secret (it can mint a token for any user). Treat it as a trusted component.
 
